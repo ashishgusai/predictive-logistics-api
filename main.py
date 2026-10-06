@@ -1,21 +1,44 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
+from typing import List
 
 import models
+import schemas
 from database import engine, get_db
 
-# Create the database tables automatically on startup
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Predictive Logistics API",
     description="Uses Machine Learning to dynamically cluster and optimize delivery routes.",
-    version="0.1.0"
+    version="0.2.0"
 )
 
 @app.get("/health")
 def health_check(db: Session = Depends(get_db)):
-    """Checks API health and database connectivity."""
-    # Simple query to ensure the DB is connected
     stop_count = db.query(models.DeliveryStop).count()
     return {"status": "healthy", "pending_deliveries": stop_count}
+
+@app.post("/api/v1/deliveries", response_model=schemas.DeliveryStopResponse)
+def create_delivery(delivery: schemas.DeliveryStopCreate, db: Session = Depends(get_db)):
+    """Ingest a new delivery request."""
+    # Convert Pydantic schema to SQLAlchemy model instance
+    db_delivery = models.DeliveryStop(
+        customer_name=delivery.customer_name,
+        address=delivery.address,
+        latitude=delivery.latitude,
+        longitude=delivery.longitude
+    )
+    
+    # Save to database
+    db.add(db_delivery)
+    db.commit()
+    db.refresh(db_delivery) # Reloads the object to get the generated ID
+    
+    return db_delivery
+
+@app.get("/api/v1/deliveries", response_model=List[schemas.DeliveryStopResponse])
+def get_pending_deliveries(db: Session = Depends(get_db)):
+    """Fetch all deliveries that haven't been completed yet."""
+    deliveries = db.query(models.DeliveryStop).filter(models.DeliveryStop.is_delivered == False).all()
+    return deliveries
