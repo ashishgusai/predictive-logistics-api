@@ -66,3 +66,30 @@ def optimize_routes(request: ClusterRequest, db: Session = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/routes/{zone_id}", response_model=List[schemas.DeliveryStopResponse])
+def get_route_for_driver(zone_id: int, db: Session = Depends(get_db)):
+    """Fetch all pending deliveries assigned to a specific driver zone."""
+    deliveries = db.query(models.DeliveryStop).filter(
+        models.DeliveryStop.assigned_zone == zone_id,
+        models.DeliveryStop.is_delivered == False
+    ).all()
+    
+    if not deliveries:
+        raise HTTPException(status_code=404, detail=f"No pending deliveries for Zone {zone_id}")
+        
+    return deliveries
+
+@app.patch("/api/v1/deliveries/{delivery_id}/complete", response_model=schemas.DeliveryStopResponse)
+def mark_delivery_completed(delivery_id: int, db: Session = Depends(get_db)):
+    """Mark a specific delivery as dropped off/completed."""
+    delivery = db.query(models.DeliveryStop).filter(models.DeliveryStop.id == delivery_id).first()
+    
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+        
+    delivery.is_delivered = True
+    db.commit()
+    db.refresh(delivery)
+    
+    return delivery
