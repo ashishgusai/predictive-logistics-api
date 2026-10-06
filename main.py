@@ -6,6 +6,10 @@ import models
 import schemas
 from database import engine, get_db
 
+from pydantic import BaseModel
+from ml import calculate_delivery_zones
+
+
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -42,3 +46,23 @@ def get_pending_deliveries(db: Session = Depends(get_db)):
     """Fetch all deliveries that haven't been completed yet."""
     deliveries = db.query(models.DeliveryStop).filter(models.DeliveryStop.is_delivered == False).all()
     return deliveries
+
+class ClusterRequest(BaseModel):
+    num_drivers: int
+
+@app.post("/api/v1/cluster-routes")
+def optimize_routes(request: ClusterRequest, db: Session = Depends(get_db)):
+    """
+    Run ML clustering to group deliveries into optimized driver zones.
+    """
+    try:
+        updated_count = calculate_delivery_zones(db, request.num_drivers)
+        
+        if updated_count == 0:
+            return {"message": "No pending deliveries to cluster."}
+            
+        return {
+            "message": f"Successfully clustered {updated_count} deliveries into {request.num_drivers} zones."
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
